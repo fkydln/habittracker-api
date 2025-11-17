@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <title>Habit Tracker</title>
+    
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://unpkg.com/cal-heatmap/dist/cal-heatmap.min.js"></script>
+    <script src="https://unpkg.com/cal-heatmap/dist/plugins/Tooltip.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/cal-heatmap/dist/cal-heatmap.css">
+
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0d1117;
+            color: #c9d1d9;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            margin: 0;
+            min-height: 100vh;
+        }
+        h1 { margin-bottom: 10px; font-size: 24px; }
+        
+        /* User Selector Styling */
+        select {
+            background-color: #161b22;
+            color: #c9d1d9;
+            border: 1px solid #30363d;
+            padding: 8px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 16px;
+        }
+
+        #cal-heatmap { background-color: #0d1117; border-radius: 6px; padding: 10px; margin-bottom: 30px;}
+        
+        #log-btn {
+            background-color: #238636;
+            color: white;
+            border: 1px solid rgba(240,246,252,0.1);
+            padding: 15px 30px; /* Larger for mobile touch */
+            font-size: 18px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            width: 100%;
+            max-width: 300px;
+        }
+        #log-btn:active { background-color: #2ea043; transform: scale(0.98); }
+    </style>
+</head>
+<body>
+
+    <h1>Habit Tracker</h1>
+
+    <select id="user-select" onchange="changeUser()">
+        <option value="fazkay">fazkay</option>
+        <option value="wife">nida</option>
+        <option value="sister">kevser</option>
+        <option value="nephew">cihan</option>
+    </select>
+
+    <div id="cal-heatmap"></div>
+
+    <button id="log-btn" onclick="logHabit()">Log For Selected User</button>
+
+    <script>
+        const cal = new CalHeatmap();
+        const now = new Date();
+        let currentUser = localStorage.getItem('habit_user') || 'fazkay';
+
+        // Set dropdown to saved user
+        document.getElementById('user-select').value = currentUser;
+
+        // Initialize Heatmap
+        cal.paint({
+            itemSelector: '#cal-heatmap',
+            range: 12,
+            domain: { type: 'month', gutter: 10, label: { text: 'MMM', position: 'top' } },
+            subDomain: { type: 'day', radius: 2, width: 15, height: 15, gutter: 4 },
+            date: { start: new Date(now.getFullYear(), 0, 1) },
+            data: {
+                source: `/api/data?user=${currentUser}`, // Fetch data for specific user
+                type: 'json',
+                x: 'date',
+                y: 'value'
+            },
+            scale: {
+                color: {
+                    range: ['#161b22', '#0e4429', '#006d32', '#26a641', '#39d353'],
+                    type: 'linear',
+                    domain: [0, 1, 2, 3, 4]
+                },
+            },
+            theme: 'dark'
+        });
+
+        // Handle Dropdown Change
+        function changeUser() {
+            currentUser = document.getElementById('user-select').value;
+            // Save preference to phone storage so it remembers next time
+            localStorage.setItem('habit_user', currentUser);
+            
+            // Update the heatmap source and redraw
+            cal.paint({
+                data: {
+                    source: `/api/data?user=${currentUser}`,
+                    type: 'json',
+                    x: 'date',
+                    y: 'value'
+                }
+            });
+        }
+
+        async function logHabit() {
+            const btn = document.getElementById('log-btn');
+            btn.innerText = "Logging...";
+            
+            try {
+                const response = await fetch('/api/log', { 
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ user: currentUser }) 
+                });
+                
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    // Instant UI feedback
+                    btn.innerText = "Success!";
+                    setTimeout(() => btn.innerText = "Log For Selected User", 2000);
+                    // Refresh graph without reloading page
+                    changeUser(); 
+                }
+            } catch (error) {
+                alert("Error logging.");
+                btn.innerText = "Log For Selected User";
+            }
+        }
+    </script>
+</body>
+</html>

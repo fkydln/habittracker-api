@@ -1,0 +1,31 @@
+# Secrets and configuration files (Never upload these to public repositories)
+
+.env
+
+# Python junk files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+
+#MacOS junk files
+.DS_Store
+.AppleDouble
+.LSOverride
+.vscode/
+
+# Thumbnails
+._*
+
+# Icon must end with two \r
+Icon\r\r
+
+# Virtual environment
+venv/
+env/
+*.egg-info/ 
+
+# Database files
+*.db
+*.sqlite3
