@@ -37,7 +37,12 @@
             font-size: 16px;
         }
 
-        #cal-heatmap { background-color: #0d1117; border-radius: 6px; padding: 10px; margin-bottom: 30px;}
+        #cal-heatmap { 
+            background-color: #0d1117; 
+            border-radius: 6px; 
+            padding: 10px; 
+            margin-bottom: 30px;
+        }
         
         #log-btn {
             background-color: #238636;
@@ -77,10 +82,13 @@
         // Set dropdown to saved user
         document.getElementById('user-select').value = currentUser;
 
+        // If screen width is less than 768px (mobile), use 4 months, else 12
+        const rangeCount = window.innerWidth < 768 ? 4 : 12;
+
         // Initialize Heatmap
         cal.paint({
             itemSelector: '#cal-heatmap',
-            range: 12,
+            range: rangeCount,
             domain: { type: 'month', gutter: 10, label: { text: 'MMM', position: 'top' } },
             subDomain: { type: 'day', radius: 2, width: 15, height: 15, gutter: 4 },
             date: { start: new Date(now.getFullYear(), 0, 1) },
