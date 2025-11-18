@@ -57,6 +57,13 @@
             max-width: 300px;
         }
         #log-btn:active { background-color: #2ea043; transform: scale(0.98); }
+        
+        /* Style for the numbers inside the squares */
+        .cal-heatmap-container .subdomain-text {
+            font-size: 8px;   /* Keep it tiny */
+            fill: #666;       /* Grey color so it doesn't compete with the green */
+            pointer-events: none; /* Let clicks pass through to the square */
+        }
     </style>
 </head>
 <body>
@@ -129,7 +136,23 @@
                 itemSelector: '#cal-heatmap',
                 range: rangeCount,
                 domain: { type: 'month', gutter: 10, label: { text: 'MMM', position: 'top' } },
-                subDomain: { type: 'day', radius: 2, width: 15, height: 15, gutter: 4 },
+                subDomain: { 
+                type: 'day', 
+                radius: 2, 
+                width: 15, 
+                height: 15, 
+                gutter: 4,
+                // Logic to show date only on specific days
+                label: (timestamp, value) => {
+                    const date = new Date(timestamp).getDate();
+                    // Show on the 1st, 5th, 10th, 15th, 20th, 25th, 30th
+                    // but for now we will show all dates.
+                    if (date === 1 || date % 1 === 0) {
+                        return date;
+                    }
+                    return ''; // Return empty string for all other days
+                }
+            },
                 
                 // DYNAMIC START DATE
                 date: { start: startDate },
