@@ -74,55 +74,91 @@
 
     <button id="log-btn" onclick="logHabit()">Log For Selected User</button>
 
-    <script>
+ <script>
         const cal = new CalHeatmap();
-        const now = new Date();
         let currentUser = localStorage.getItem('habit_user') || 'fazkay';
 
         // Set dropdown to saved user
         document.getElementById('user-select').value = currentUser;
 
-        // If screen width is less than 768px (mobile), use 4 months, else 12
-        const rangeCount = window.innerWidth < 768 ? 4 : 12;
+        // Run the main render function on load
+        renderCalendar();
 
-        // Initialize Heatmap
-        cal.paint({
-            itemSelector: '#cal-heatmap',
-            range: rangeCount,
-            domain: { type: 'month', gutter: 10, label: { text: 'MMM', position: 'top' } },
-            subDomain: { type: 'day', radius: 2, width: 15, height: 15, gutter: 4 },
-            date: { start: new Date(now.getFullYear(), 0, 1) },
-            data: {
-                source: `/api/data?user=${currentUser}`, // Fetch data for specific user
-                type: 'json',
-                x: 'date',
-                y: 'value'
-            },
-            scale: {
-                color: {
-                    range: ['#161b22', '#0e4429', '#006d32', '#26a641', '#39d353'],
-                    type: 'linear',
-                    domain: [0, 1, 2, 3, 4]
+        async function renderCalendar() {
+            // 1. Determine Screen Size (Mobile vs Desktop)
+            const isMobile = window.innerWidth < 768;
+            const rangeCount = isMobile ? 4 : 12; // Show 4 months on mobile, 12 on desktop
+
+            // 2. Fetch Data FIRST so we can calculate the start date
+            let apiData = [];
+            let startDate = new Date(); // Default to today
+
+            try {
+                const response = await fetch(`/api/data?user=${currentUser}`);
+                apiData = await response.json();
+
+                if (apiData.length > 0) {
+                    // Sort data to find the very first entry
+                    // (Airtable doesn't always return sorted order)
+                    apiData.sort((a, b) => new Date(a.date) - new Date(b.date));
+                    
+                    const firstLogDate = new Date(apiData[0].date);
+                    const threeMonthsAgo = new Date();
+                    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+
+                    if (isMobile) {
+                        // On Mobile: ALWAYS ensure 'Today' is visible. 
+                        // Start 3 months ago.
+                        startDate = threeMonthsAgo;
+                    } else {
+                        // On Desktop: Start at the user's first entry (e.g., May)
+                        // But don't go into the future if they have no data yet
+                        startDate = firstLogDate;
+                    }
+                } else {
+                    // No data? Start at Jan 1st of this year
+                    startDate = new Date(new Date().getFullYear(), 0, 1);
+                }
+
+            } catch (error) {
+                console.error("Could not fetch data", error);
+            }
+
+            // 3. Paint (or Repaint) the Calendar
+            cal.paint({
+                itemSelector: '#cal-heatmap',
+                range: rangeCount,
+                domain: { type: 'month', gutter: 10, label: { text: 'MMM', position: 'top' } },
+                subDomain: { type: 'day', radius: 2, width: 15, height: 15, gutter: 4 },
+                
+                // DYNAMIC START DATE
+                date: { start: startDate },
+                
+                // DYNAMIC DATA
+                data: {
+                    source: apiData, // Pass the data we already fetched
+                    type: 'json',
+                    x: 'date',
+                    y: 'value'
                 },
-            },
-            theme: 'dark'
-        });
+                scale: {
+                    color: {
+                        // range: ['#161b22', '#0e4429', '#006d32', '#26a641', '#39d353'],
+                        range: ['#161b22','#26a641'],
+                        type: 'linear',
+                        domain: [0, 1]
+                    },
+                },
+                theme: 'dark'
+            });
+        }
 
         // Handle Dropdown Change
         function changeUser() {
             currentUser = document.getElementById('user-select').value;
-            // Save preference to phone storage so it remembers next time
             localStorage.setItem('habit_user', currentUser);
-            
-            // Update the heatmap source and redraw
-            cal.paint({
-                data: {
-                    source: `/api/data?user=${currentUser}`,
-                    type: 'json',
-                    x: 'date',
-                    y: 'value'
-                }
-            });
+            // Re-run the whole render logic (fetch new data -> calculate new start date)
+            renderCalendar();
         }
 
         async function logHabit() {
@@ -139,10 +175,9 @@
                 const result = await response.json();
 
                 if (result.status === 'success') {
-                    // Instant UI feedback
                     btn.innerText = "Success!";
                     setTimeout(() => btn.innerText = "Log For Selected User", 2000);
-                    // Refresh graph without reloading page
+                    // Refresh graph
                     changeUser(); 
                 }
             } catch (error) {
