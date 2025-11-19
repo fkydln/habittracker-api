@@ -3,8 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Habit Tracker</title>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://unpkg.com/cal-heatmap/dist/cal-heatmap.min.js"></script>
@@ -52,8 +50,8 @@
         }
         #log-btn:active { background-color: #2ea043; transform: scale(0.98); }
         .cal-heatmap-container .subdomain-text {
-            font-size: 8px;
-            fill: #666;
+            font-size: 9px; /* Slightly larger font for the numbers */
+            fill: #8b949e;
             pointer-events: none;
         }
     </style>
@@ -61,77 +59,85 @@
 <body>
     <h1>Habit Tracker</h1>
     <select id="user-select" onchange="changeUser()">
-        <!-- Populated dynamically -->
     </select>
     <div id="cal-heatmap"></div>
-    <button id="log-btn" onclick="logHabit()">Log For Selected User</button>
+    <button id="log-btn" onclick="logHabit()">I Did It Today</button>
 
     <script>
         const cal = new CalHeatmap();
         let currentUser = localStorage.getItem('habit_user') || null;
-        let userList = [];
-
-        async function populateUserDropdown() {
-            const response = await fetch('/api/users');
-            userList = await response.json();
-
-            const dropdown = document.getElementById('user-select');
-            dropdown.innerHTML = ""; // Clear
-
-            userList.forEach(user => {
-                const opt = document.createElement("option");
-                opt.value = user.username;
-                opt.innerText = user.displayname || user.username;
-                dropdown.appendChild(opt);
-            });
-
-            // Restore previously selected user, if exists
-            if (currentUser && userList.some(u => u.username === currentUser)) {
-                dropdown.value = currentUser;
-            } else if (userList.length > 0) {
-                currentUser = userList[0].username;
-                dropdown.value = currentUser;
-            }
-        }
 
         (async () => {
             await populateUserDropdown();
             renderCalendar();
         })();
 
+        async function populateUserDropdown() {
+            try {
+                const response = await fetch('/api/users');
+                const userList = await response.json();
+                const dropdown = document.getElementById('user-select');
+                dropdown.innerHTML = ""; 
+
+                userList.forEach(user => {
+                    const opt = document.createElement("option");
+                    opt.value = user.username;
+                    opt.innerText = user.displayname || user.username;
+                    dropdown.appendChild(opt);
+                });
+
+                if (currentUser && userList.some(u => u.username === currentUser)) {
+                    dropdown.value = currentUser;
+                } else if (userList.length > 0) {
+                    currentUser = userList[0].username;
+                    dropdown.value = currentUser;
+                }
+            } catch (e) {
+                console.error("Error loading users:", e);
+            }
+        }
+
         async function renderCalendar() {
-            // 1. Determine Screen Size
             const isMobile = window.innerWidth < 768;
             const rangeCount = isMobile ? 4 : 12;
 
-            // 2. Fetch Habit Data
             let apiData = [];
-            let startDate = new Date(); // Default to today
+            let startDate = new Date();
 
-            try {
-                const response = await fetch(`/api/data?user=${currentUser}`);
-                apiData = await response.json();
+            if (currentUser) {
+                try {
+                    const response = await fetch(`/api/data?user=${currentUser}`);
+                    const rawData = await response.json();
 
-                if (apiData.length > 0) {
-                    apiData.sort((a, b) => new Date(a.date) - new Date(b.date));
-                    const firstLogDate = new Date(apiData[0].date);
-                    const threeMonthsAgo = new Date();
-                    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+                    // --- FIX START: THE NOON STRATEGY ---
+                    apiData = rawData.map(item => {
+                        const [year, month, day] = item.date.split('-');
+                        return {
+                            // We set the hour to 12 (Noon). 
+                            // If the timezone shifts -8 hours, it becomes 4 AM.
+                            // It stays on the SAME day.
+                            date: new Date(year, month - 1, day, 12, 0, 0),
+                            value: item.value
+                        };
+                    });
+                    // --- FIX END ---
 
-                    if (isMobile) {
-                        startDate = threeMonthsAgo;
+                    if (apiData.length > 0) {
+                        apiData.sort((a, b) => a.date - b.date);
+                        
+                        if (isMobile) {
+                            const d = new Date(); d.setMonth(d.getMonth() - 3);
+                            startDate = d;
+                        } else {
+                            startDate = apiData[0].date;
+                        }
                     } else {
-                        startDate = firstLogDate;
+                        startDate = new Date(new Date().getFullYear(), 0, 1);
                     }
-                } else {
-                    startDate = new Date(new Date().getFullYear(), 0, 1);
-                }
-            } catch (error) {
-                console.error("Could not fetch data", error);
+                } catch (e) { console.error(e); }
             }
-            
-            console.log("apiData for calendar:", apiData);
-            // 3. Paint Calendar
+
+            if(cal.calendarPainter) { cal.destroy(); }
 
             cal.paint({
                 itemSelector: '#cal-heatmap',
@@ -140,32 +146,21 @@
                 subDomain: { 
                     type: 'day', 
                     radius: 2, 
-                    width: 15, 
-                    height: 15, 
+                    width: 18, // Made boxes slightly bigger to fit text
+                    height: 18, 
                     gutter: 4,
-                    label: (timestamp, value) => {
-                        const date = new Date(timestamp).getDate();
-                        if (date === 1 || date % 1 === 0) {
-                            return date;
-                        }
-                        return '';
+                    // LABEL FIX: Show date number for every single day
+                    label: (timestamp) => {
+                        return new Date(timestamp).getDate();
                     }
                 },
                 date: { start: startDate },
-                data: {
-                    source: apiData,
-                    type: 'json',
-                    x: 'date',
-                    y: 'value'
-                },
+                data: { source: apiData, type: 'json', x: 'date', y: 'value' },
                 scale: {
-                    color: {
-                        range: ['#161b22', '#26a641'],
-                        type: 'linear',
-                        domain: [0, 1]
-                    },
+                    color: { range: ['#161b22', '#39d353'], type: 'threshold', domain: [0.5] },
                 },
-                theme: 'dark'
+                theme: 'dark',
+                tooltip: true
             });
         }
 
@@ -177,31 +172,25 @@
 
         async function logHabit() {
             const btn = document.getElementById('log-btn');
+            const originalText = btn.innerText;
             btn.innerText = "Logging...";
+            
             try {
-                // Get user's local date in YYYY-MM-DD
-                const localDate = new Date();
-                const yyyy = localDate.getFullYear();
-                const mm = String(localDate.getMonth() + 1).padStart(2, '0');
-                const dd = String(localDate.getDate()).padStart(2, '0');
-                const dateString = `${yyyy}-${mm}-${dd}`;
-
                 const response = await fetch('/api/log', { 
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ user: currentUser, date: dateString })
+                    body: JSON.stringify({ user: currentUser })
                 });
-
                 const result = await response.json();
-
                 if (result.status === 'success') {
-                    btn.innerText = "Success!";
-                    setTimeout(() => btn.innerText = "Log For Selected User", 2000);
-                    changeUser();
+                    btn.innerText = "Done!";
+                    // Reloading immediately to see the result
+                    renderCalendar();
+                    setTimeout(() => btn.innerText = originalText, 2000);
                 }
             } catch (error) {
                 alert("Error logging.");
-                btn.innerText = "Log For Selected User";
+                btn.innerText = originalText;
             }
         }
     </script>
