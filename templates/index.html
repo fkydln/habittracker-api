@@ -4,23 +4,45 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Habit Tracker</title>
+
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://unpkg.com/cal-heatmap/dist/cal-heatmap.min.js"></script>
     <script src="https://unpkg.com/cal-heatmap/dist/plugins/Tooltip.min.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/cal-heatmap/dist/cal-heatmap.css">
+
     <style>
+        .parent {
+    display: flex;
+    justify-content: center;  /* horizontal */
+    align-items: center;      /* vertical */
+}
+
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background-color: #0d1117;
             color: #c9d1d9;
+            margin: 0;
+
+            /* Center the entire app */
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* keep top spacing */
+            min-height: 100vh;
+        }
+
+        /* NEW: wrapper that keeps content centered and clean */
+        .app-wrapper {
+            width: 100%;
+            max-width: 450px;
             display: flex;
             flex-direction: column;
             align-items: center;
             padding: 20px;
-            margin: 0;
-            min-height: 100vh;
+            box-sizing: border-box;
         }
+
         h1 { margin-bottom: 10px; font-size: 24px; }
+
         select {
             background-color: #161b22;
             color: #c9d1d9;
@@ -30,12 +52,23 @@
             margin-bottom: 20px;
             font-size: 16px;
         }
-        #cal-heatmap { 
-            background-color: #0d1117; 
-            border-radius: 6px; 
-            padding: 10px; 
-            margin-bottom: 30px;
-        }
+
+       #cal-container {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    overflow: visible;
+    padding-bottom: 10px;
+}
+
+.cal-heatmap-container {
+    margin: 0 auto;
+}
+
+
+
+       
+
         #log-btn {
             background-color: #238636;
             color: white;
@@ -47,21 +80,35 @@
             font-weight: 600;
             width: 100%;
             max-width: 300px;
+            margin-top: 20px;
         }
+
         #log-btn:active { background-color: #2ea043; transform: scale(0.98); }
+
         .cal-heatmap-container .subdomain-text {
-            font-size: 9px; /* Slightly larger font for the numbers */
+            font-size: 9px;
             fill: #8b949e;
             pointer-events: none;
         }
     </style>
 </head>
+
 <body>
-    <h1>Habit Tracker</h1>
-    <select id="user-select" onchange="changeUser()">
-    </select>
-    <div id="cal-heatmap"></div>
-    <button id="log-btn" onclick="logHabit()">I Did It Today</button>
+
+    <!-- NEW: wrapper added -->
+    <div class="app-wrapper">
+
+        <h1>Habit Tracker</h1>
+
+        <select id="user-select" onchange="changeUser()"></select>
+
+        <div id="cal-container">
+            <div id="cal-heatmap"></div>
+        </div>
+
+        <button id="log-btn" onclick="logHabit()">I Did It Today</button>
+
+    </div>
 
     <script>
         const cal = new CalHeatmap();
@@ -77,7 +124,7 @@
                 const response = await fetch('/api/users');
                 const userList = await response.json();
                 const dropdown = document.getElementById('user-select');
-                dropdown.innerHTML = ""; 
+                dropdown.innerHTML = "";
 
                 userList.forEach(user => {
                     const opt = document.createElement("option");
@@ -97,9 +144,24 @@
             }
         }
 
+        function getMonthRange() {
+            const w = window.innerWidth;
+            if (w < 500) return 3;
+            if (w < 900) return 6;
+            return 12;
+        }
+
+        function debounce(func, delay) {
+            let timer;
+            return function() {
+                clearTimeout(timer);
+                timer = setTimeout(() => func.apply(this, arguments), delay);
+            };
+        }
+
         async function renderCalendar() {
-            const isMobile = window.innerWidth < 768;
-            const rangeCount = isMobile ? 4 : 12;
+            const monthRange = getMonthRange();
+            const isMobile = window.innerWidth < 500;
 
             let apiData = [];
             let startDate = new Date();
@@ -109,60 +171,59 @@
                     const response = await fetch(`/api/data?user=${currentUser}`);
                     const rawData = await response.json();
 
-                    // --- FIX START: THE NOON STRATEGY ---
                     apiData = rawData.map(item => {
                         const [year, month, day] = item.date.split('-');
                         return {
-                            // We set the hour to 12 (Noon). 
-                            // If the timezone shifts -8 hours, it becomes 4 AM.
-                            // It stays on the SAME day.
                             date: new Date(year, month - 1, day, 12, 0, 0),
                             value: item.value
                         };
                     });
-                    // --- FIX END ---
 
                     if (apiData.length > 0) {
                         apiData.sort((a, b) => a.date - b.date);
-                        
-                        if (isMobile) {
-                            const d = new Date(); d.setMonth(d.getMonth() - 3);
-                            startDate = d;
-                        } else {
-                            startDate = apiData[0].date;
-                        }
+                        startDate = apiData[0].date;
                     } else {
                         startDate = new Date(new Date().getFullYear(), 0, 1);
                     }
+
                 } catch (e) { console.error(e); }
             }
 
-            if(cal.calendarPainter) { cal.destroy(); }
+            if (cal.calendarPainter) cal.destroy();
 
             cal.paint({
                 itemSelector: '#cal-heatmap',
-                range: rangeCount,
+                range: monthRange,
                 domain: { type: 'month', gutter: 10, label: { text: 'MMM', position: 'top' } },
-                subDomain: { 
-                    type: 'day', 
-                    radius: 2, 
-                    width: 18, // Made boxes slightly bigger to fit text
-                    height: 18, 
-                    gutter: 4,
-                    // LABEL FIX: Show date number for every single day
-                    label: (timestamp) => {
-                        return new Date(timestamp).getDate();
-                    }
+                subDomain: {
+                    type: 'day',
+                    width: isMobile ? 12 : 18,
+                    height: isMobile ? 12 : 18,
+                    gutter: isMobile ? 2 : 4,
+                    radius: 2,
+                    label: ts => new Date(ts).getDate()
                 },
                 date: { start: startDate },
                 data: { source: apiData, type: 'json', x: 'date', y: 'value' },
-                scale: {
-                    color: { range: ['#161b22', '#39d353'], type: 'threshold', domain: [0.5] },
-                },
+                scale: { color: { range: ['#161b22', '#39d353'], type: 'threshold', domain: [0.5] }},
                 theme: 'dark',
-                tooltip: true
+                tooltip: true,
+                navigation: { previous: true, next: true }
             });
         }
+
+        window.addEventListener("resize", debounce(renderCalendar, 250));
+
+        /* Swipe */
+        let touchStartX = 0;
+        document.getElementById('cal-container').addEventListener("touchstart", e => {
+            touchStartX = e.touches[0].clientX;
+        });
+        document.getElementById('cal-container').addEventListener("touchend", e => {
+            const diff = e.changedTouches[0].clientX - touchStartX;
+            if (diff > 50) cal.previous();
+            if (diff < -50) cal.next();
+        });
 
         function changeUser() {
             currentUser = document.getElementById('user-select').value;
@@ -174,9 +235,9 @@
             const btn = document.getElementById('log-btn');
             const originalText = btn.innerText;
             btn.innerText = "Logging...";
-            
+
             try {
-                const response = await fetch('/api/log', { 
+                const response = await fetch('/api/log', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ user: currentUser })
@@ -184,7 +245,6 @@
                 const result = await response.json();
                 if (result.status === 'success') {
                     btn.innerText = "Done!";
-                    // Reloading immediately to see the result
                     renderCalendar();
                     setTimeout(() => btn.innerText = originalText, 2000);
                 }
@@ -194,5 +254,6 @@
             }
         }
     </script>
+
 </body>
 </html>
