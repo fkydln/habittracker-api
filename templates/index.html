@@ -6,12 +6,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <title>Habit Tracker</title>
-    
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <script src="https://unpkg.com/cal-heatmap/dist/cal-heatmap.min.js"></script>
     <script src="https://unpkg.com/cal-heatmap/dist/plugins/Tooltip.min.js"></script>
     <link rel="stylesheet" href="https://unpkg.com/cal-heatmap/dist/cal-heatmap.css">
-
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
@@ -25,8 +23,6 @@
             min-height: 100vh;
         }
         h1 { margin-bottom: 10px; font-size: 24px; }
-        
-        /* User Selector Styling */
         select {
             background-color: #161b22;
             color: #c9d1d9;
@@ -36,19 +32,17 @@
             margin-bottom: 20px;
             font-size: 16px;
         }
-
         #cal-heatmap { 
             background-color: #0d1117; 
             border-radius: 6px; 
             padding: 10px; 
             margin-bottom: 30px;
         }
-        
         #log-btn {
             background-color: #238636;
             color: white;
             border: 1px solid rgba(240,246,252,0.1);
-            padding: 15px 30px; /* Larger for mobile touch */
+            padding: 15px 30px;
             font-size: 18px;
             border-radius: 6px;
             cursor: pointer;
@@ -57,46 +51,60 @@
             max-width: 300px;
         }
         #log-btn:active { background-color: #2ea043; transform: scale(0.98); }
-        
-        /* Style for the numbers inside the squares */
         .cal-heatmap-container .subdomain-text {
-            font-size: 8px;   /* Keep it tiny */
-            fill: #666;       /* Grey color so it doesn't compete with the green */
-            pointer-events: none; /* Let clicks pass through to the square */
+            font-size: 8px;
+            fill: #666;
+            pointer-events: none;
         }
     </style>
 </head>
 <body>
-
     <h1>Habit Tracker</h1>
-
     <select id="user-select" onchange="changeUser()">
-        <option value="fazkay">fazkay</option>
-        <option value="wife">nida</option>
-        <option value="sister">kevser</option>
-        <option value="nephew">cihan</option>
+        <!-- Populated dynamically -->
     </select>
-
     <div id="cal-heatmap"></div>
-
     <button id="log-btn" onclick="logHabit()">Log For Selected User</button>
 
- <script>
+    <script>
         const cal = new CalHeatmap();
-        let currentUser = localStorage.getItem('habit_user') || 'fazkay';
+        let currentUser = localStorage.getItem('habit_user') || null;
+        let userList = [];
 
-        // Set dropdown to saved user
-        document.getElementById('user-select').value = currentUser;
+        async function populateUserDropdown() {
+            const response = await fetch('/api/users');
+            userList = await response.json();
 
-        // Run the main render function on load
-        renderCalendar();
+            const dropdown = document.getElementById('user-select');
+            dropdown.innerHTML = ""; // Clear
+
+            userList.forEach(user => {
+                const opt = document.createElement("option");
+                opt.value = user.username;
+                opt.innerText = user.displayname || user.username;
+                dropdown.appendChild(opt);
+            });
+
+            // Restore previously selected user, if exists
+            if (currentUser && userList.some(u => u.username === currentUser)) {
+                dropdown.value = currentUser;
+            } else if (userList.length > 0) {
+                currentUser = userList[0].username;
+                dropdown.value = currentUser;
+            }
+        }
+
+        (async () => {
+            await populateUserDropdown();
+            renderCalendar();
+        })();
 
         async function renderCalendar() {
-            // 1. Determine Screen Size (Mobile vs Desktop)
+            // 1. Determine Screen Size
             const isMobile = window.innerWidth < 768;
-            const rangeCount = isMobile ? 4 : 12; // Show 4 months on mobile, 12 on desktop
+            const rangeCount = isMobile ? 4 : 12;
 
-            // 2. Fetch Data FIRST so we can calculate the start date
+            // 2. Fetch Habit Data
             let apiData = [];
             let startDate = new Date(); // Default to today
 
@@ -105,69 +113,54 @@
                 apiData = await response.json();
 
                 if (apiData.length > 0) {
-                    // Sort data to find the very first entry
-                    // (Airtable doesn't always return sorted order)
                     apiData.sort((a, b) => new Date(a.date) - new Date(b.date));
-                    
                     const firstLogDate = new Date(apiData[0].date);
                     const threeMonthsAgo = new Date();
                     threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
 
                     if (isMobile) {
-                        // On Mobile: ALWAYS ensure 'Today' is visible. 
-                        // Start 3 months ago.
                         startDate = threeMonthsAgo;
                     } else {
-                        // On Desktop: Start at the user's first entry (e.g., May)
-                        // But don't go into the future if they have no data yet
                         startDate = firstLogDate;
                     }
                 } else {
-                    // No data? Start at Jan 1st of this year
                     startDate = new Date(new Date().getFullYear(), 0, 1);
                 }
-
             } catch (error) {
                 console.error("Could not fetch data", error);
             }
+            
+            console.log("apiData for calendar:", apiData);
+            // 3. Paint Calendar
 
-            // 3. Paint (or Repaint) the Calendar
             cal.paint({
                 itemSelector: '#cal-heatmap',
                 range: rangeCount,
                 domain: { type: 'month', gutter: 10, label: { text: 'MMM', position: 'top' } },
                 subDomain: { 
-                type: 'day', 
-                radius: 2, 
-                width: 15, 
-                height: 15, 
-                gutter: 4,
-                // Logic to show date only on specific days
-                label: (timestamp, value) => {
-                    const date = new Date(timestamp).getDate();
-                    // Show on the 1st, 5th, 10th, 15th, 20th, 25th, 30th
-                    // but for now we will show all dates.
-                    if (date === 1 || date % 1 === 0) {
-                        return date;
+                    type: 'day', 
+                    radius: 2, 
+                    width: 15, 
+                    height: 15, 
+                    gutter: 4,
+                    label: (timestamp, value) => {
+                        const date = new Date(timestamp).getDate();
+                        if (date === 1 || date % 1 === 0) {
+                            return date;
+                        }
+                        return '';
                     }
-                    return ''; // Return empty string for all other days
-                }
-            },
-                
-                // DYNAMIC START DATE
+                },
                 date: { start: startDate },
-                
-                // DYNAMIC DATA
                 data: {
-                    source: apiData, // Pass the data we already fetched
+                    source: apiData,
                     type: 'json',
                     x: 'date',
                     y: 'value'
                 },
                 scale: {
                     color: {
-                        // range: ['#161b22', '#0e4429', '#006d32', '#26a641', '#39d353'],
-                        range: ['#161b22','#26a641'],
+                        range: ['#161b22', '#26a641'],
                         type: 'linear',
                         domain: [0, 1]
                     },
@@ -176,32 +169,35 @@
             });
         }
 
-        // Handle Dropdown Change
         function changeUser() {
             currentUser = document.getElementById('user-select').value;
             localStorage.setItem('habit_user', currentUser);
-            // Re-run the whole render logic (fetch new data -> calculate new start date)
             renderCalendar();
         }
 
         async function logHabit() {
             const btn = document.getElementById('log-btn');
             btn.innerText = "Logging...";
-            
             try {
+                // Get user's local date in YYYY-MM-DD
+                const localDate = new Date();
+                const yyyy = localDate.getFullYear();
+                const mm = String(localDate.getMonth() + 1).padStart(2, '0');
+                const dd = String(localDate.getDate()).padStart(2, '0');
+                const dateString = `${yyyy}-${mm}-${dd}`;
+
                 const response = await fetch('/api/log', { 
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ user: currentUser }) 
+                    body: JSON.stringify({ user: currentUser, date: dateString })
                 });
-                
+
                 const result = await response.json();
 
                 if (result.status === 'success') {
                     btn.innerText = "Success!";
                     setTimeout(() => btn.innerText = "Log For Selected User", 2000);
-                    // Refresh graph
-                    changeUser(); 
+                    changeUser();
                 }
             } catch (error) {
                 alert("Error logging.");
