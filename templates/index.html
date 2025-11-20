@@ -11,33 +11,23 @@
     <link rel="stylesheet" href="https://unpkg.com/cal-heatmap/dist/cal-heatmap.css">
 
     <style>
-        .parent {
-    display: flex;
-    justify-content: center;  /* horizontal */
-    align-items: center;      /* vertical */
-}
-
         body {
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             background-color: #0d1117;
             color: #c9d1d9;
             margin: 0;
-
-            /* Center the entire app */
             display: flex;
             justify-content: center;
-            align-items: flex-start; /* keep top spacing */
             min-height: 100vh;
+            padding-top: 40px; /* Added breathing room at top */
         }
 
-        /* NEW: wrapper that keeps content centered and clean */
         .app-wrapper {
-            width: 100%;
-            max-width: 450px;
+            width: 95%; /* Take up most of the screen on mobile */
+            max-width: 1200px; /* ALLOW EXPANSION: Changed from 450px to 1200px */
             display: flex;
             flex-direction: column;
             align-items: center;
-            padding: 20px;
             box-sizing: border-box;
         }
 
@@ -53,21 +43,20 @@
             font-size: 16px;
         }
 
-       #cal-container {
-    width: 100%;
-    display: flex;
-    justify-content: center;
-    overflow: visible;
-    padding-bottom: 10px;
-}
+        #cal-container {
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            /* Allow horizontal scroll if user forces a resize too small */
+            overflow-x: auto; 
+            padding-bottom: 10px;
+        }
 
-.cal-heatmap-container {
-    margin: 0 auto;
-}
-
-
-
-       
+        #cal-heatmap {
+            /* Ensure the SVG doesn't get clipped awkwardly */
+            display: block;
+            margin: 0 auto;
+        }
 
         #log-btn {
             background-color: #238636;
@@ -80,22 +69,19 @@
             font-weight: 600;
             width: 100%;
             max-width: 300px;
-            margin-top: 20px;
+            margin-top: 30px;
         }
 
         #log-btn:active { background-color: #2ea043; transform: scale(0.98); }
-
-        .cal-heatmap-container .subdomain-text {
-            font-size: 9px;
-            fill: #8b949e;
-            pointer-events: none;
-        }
+        
+        /* Hide scrollbar for cleaner look in some browsers */
+        #cal-container::-webkit-scrollbar { height: 6px; }
+        #cal-container::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
     </style>
 </head>
 
 <body>
 
-    <!-- NEW: wrapper added -->
     <div class="app-wrapper">
 
         <h1>Habit Tracker</h1>
@@ -144,11 +130,21 @@
             }
         }
 
-        function getMonthRange() {
-            const w = window.innerWidth;
-            if (w < 500) return 3;
-            if (w < 900) return 6;
-            return 12;
+        // Native-style responsiveness: Calculate how many months fit in the container
+        function calculateDynamicRange() {
+            const container = document.getElementById('cal-container');
+            const containerWidth = container.clientWidth;
+            
+            // Estimate width of one month block (~140px is a safe average for standard settings)
+            const monthWidth = 150; 
+            
+            let range = Math.floor(containerWidth / monthWidth);
+            
+            // Limits: Minimum 2 months, Maximum 12 (or more if you have ultra-wide screens)
+            if (range < 2) range = 2;
+            if (range > 12) range = 12;
+            
+            return range;
         }
 
         function debounce(func, delay) {
@@ -160,11 +156,16 @@
         }
 
         async function renderCalendar() {
-            const monthRange = getMonthRange();
+            // Calculate range based on actual container size
+            const dynamicRange = calculateDynamicRange();
             const isMobile = window.innerWidth < 500;
 
             let apiData = [];
+            // Default start date: Go back 'dynamicRange' months from today
+            // This ensures the current month is always on the far right
             let startDate = new Date();
+            startDate.setMonth(startDate.getMonth() - (dynamicRange - 1));
+            startDate.setDate(1);
 
             if (currentUser) {
                 try {
@@ -178,28 +179,25 @@
                             value: item.value
                         };
                     });
-
-                    if (apiData.length > 0) {
-                        apiData.sort((a, b) => a.date - b.date);
-                        startDate = apiData[0].date;
-                    } else {
-                        startDate = new Date(new Date().getFullYear(), 0, 1);
-                    }
-
                 } catch (e) { console.error(e); }
             }
 
+            // Destroy existing instance to allow clean repaint on resize
             if (cal.calendarPainter) cal.destroy();
 
             cal.paint({
                 itemSelector: '#cal-heatmap',
-                range: monthRange,
-                domain: { type: 'month', gutter: 10, label: { text: 'MMM', position: 'top' } },
+                range: dynamicRange, // Use the calculated range
+                domain: { 
+                    type: 'month', 
+                    gutter: 10, 
+                    label: { text: 'MMM', position: 'top' } 
+                },
                 subDomain: {
                     type: 'day',
-                    width: isMobile ? 12 : 18,
-                    height: isMobile ? 12 : 18,
-                    gutter: isMobile ? 2 : 4,
+                    width: isMobile ? 10 : 14,  // Slightly adjusted sizes
+                    height: isMobile ? 10 : 14,
+                    gutter: 3,
                     radius: 2,
                     label: ts => new Date(ts).getDate()
                 },
@@ -208,22 +206,12 @@
                 scale: { color: { range: ['#161b22', '#39d353'], type: 'threshold', domain: [0.5] }},
                 theme: 'dark',
                 tooltip: true,
-                navigation: { previous: true, next: true }
+                navigation: false // Disabled nav arrows to keep layout cleaner
             });
         }
 
-        window.addEventListener("resize", debounce(renderCalendar, 250));
-
-        /* Swipe */
-        let touchStartX = 0;
-        document.getElementById('cal-container').addEventListener("touchstart", e => {
-            touchStartX = e.touches[0].clientX;
-        });
-        document.getElementById('cal-container').addEventListener("touchend", e => {
-            const diff = e.changedTouches[0].clientX - touchStartX;
-            if (diff > 50) cal.previous();
-            if (diff < -50) cal.next();
-        });
+        // Re-calculate and re-paint on window resize
+        window.addEventListener("resize", debounce(renderCalendar, 200));
 
         function changeUser() {
             currentUser = document.getElementById('user-select').value;
